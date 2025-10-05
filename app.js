@@ -28,6 +28,7 @@
   // Historial para undo/redo
   const history = [];
   let historyIndex = -1;
+
   function pushHistory() {
     if (historyIndex < history.length - 1) history.splice(historyIndex + 1);
     try {
@@ -73,13 +74,14 @@
     }
   }
 
-  let strokeMinY = Infinity;
+  // Track bounding box of current stroke
+  let box = null;
   function start(ev){
     ev.preventDefault();
     drawing = true;
     const p = getPos(ev);
     lastX = p.x; lastY = p.y;
-    strokeMinY = p.y;
+    box = {minX:p.x, minY:p.y, maxX:p.x, maxY:p.y};
     ctx.beginPath();
     ctx.moveTo(lastX, lastY);
   }
@@ -87,7 +89,11 @@
     if (!drawing) return;
     ev.preventDefault();
     const p = getPos(ev);
-    strokeMinY = Math.min(strokeMinY, p.y);
+    box.minX = Math.min(box.minX, p.x);
+    box.minY = Math.min(box.minY, p.y);
+    box.maxX = Math.max(box.maxX, p.x);
+    box.maxY = Math.max(box.maxY, p.y);
+
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -112,24 +118,62 @@
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
   }
-  function end(ev){
+  async function end(ev){
     if (!drawing) return;
     drawing = false;
     ctx.beginPath();
     pushHistory();
 
-    // AutoTexto Demo: crea una caja editable en la línea siguiente
     if (autotext.value === 'demo') {
-      overlay.hidden = false;
-      setTimeout(() => {
-        overlay.hidden = true;
-        const posY = clamp(strokeMinY + 28, 14, canvas.getBoundingClientRect().height - 40);
-        createEditableTextbox(20, posY, "Escribe aquí el texto detectado…");
-      }, 450); // efecto "reconociendo"
+      showRecognizing(true);
+      await wait(350);
+      showRecognizing(false);
+      createTextBox(box.minX, box.maxY + 10, "Texto detectado…");
+    } else if (autotext.value === 'azure') {
+      try {
+        showRecognizing(true);
+        const crop = cropBox(box, 18); // margen
+        const blob = await canvasToBlob(crop);
+        const res = await fetch('/api/recognize', { method:'POST', body: blob });
+        const data = await res.json();
+        const text = (data && data.text || '').trim();
+        showRecognizing(false);
+        if (text) {
+          createTextBox(box.minX, box.maxY + 10, text);
+        } else {
+          createTextBox(box.minX, box.maxY + 10, "(sin texto)");
+        }
+      } catch (e) {
+        showRecognizing(false);
+        console.error(e);
+        createTextBox(box.minX, box.maxY + 10, "(error OCR)");
+      }
     }
   }
 
-  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  function cropBox(b, margin=10){
+    const x = Math.max(0, Math.floor((b.minX - margin)));
+    const y = Math.max(0, Math.floor((b.minY - margin)));
+    const w = Math.min(canvas.width/scale - x, Math.ceil((b.maxX - b.minX) + margin*2));
+    const h = Math.min(canvas.height/scale - y, Math.ceil((b.maxY - b.minY) + margin*2 + 20)); // un poco de extra abajo
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.round(w * scale);
+    tmp.height = Math.round(h * scale);
+    const tctx = tmp.getContext('2d');
+    tctx.scale(scale, scale);
+    tctx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+    return tmp;
+  }
+
+  function canvasToBlob(cnv){
+    return new Promise(res => cnv.toBlob(res, 'image/png', 1));
+  }
+
+  function showRecognizing(on){
+    overlay.hidden = !on;
+  }
 
   // Eventos mouse/touch
   canvas.addEventListener('mousedown', start);
@@ -152,7 +196,6 @@
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
-    // limpia cajas
     textLayer.innerHTML = "";
     pushHistory();
   });
@@ -181,14 +224,12 @@
   });
 
   function exportAsPNG(){
-    // Componer texto sobre el canvas para export
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = canvas.width;
     exportCanvas.height = canvas.height;
     const ex = exportCanvas.getContext('2d');
     ex.scale(scale, scale);
     ex.drawImage(canvas, 0, 0, canvas.width/scale, canvas.height/scale);
-    // pintar todos los textos
     [...textLayer.querySelectorAll('.text-box')].forEach(box => {
       const rect = box.getBoundingClientRect();
       const cRect = canvas.getBoundingClientRect();
@@ -201,16 +242,13 @@
     return exportCanvas.toDataURL('image/png');
   }
 
-  // Exportar PDF (simple 1 página usando canvas → dataURL dentro de un objeto PDF liviano)
   exportPdfBtn.addEventListener('click', () => {
-    // PDF mínimo (A4) embebiendo imagen: para mantenerlo simple, generamos un data URL y lo abrimos en nueva pestaña.
     const dataURL = exportAsPNG();
     const w = window.open('about:blank');
     w.document.write(`<img src="${dataURL}" style="width:100%">`);
     w.document.close();
   });
 
-  // Fondos
   function applyBackground(kind){
     canvas.classList.remove('bg-grid','bg-ruled','bg-dotted');
     if (kind === 'grid') canvas.classList.add('bg-grid');
@@ -219,41 +257,19 @@
   }
   background.addEventListener('change', (e)=> applyBackground(e.target.value));
 
-  // Atajos
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undoBtn.click(); }
     if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); redoBtn.click(); }
   });
 
-  // Cajas de texto editables (demo "reconocido")
-  function createEditableTextbox(x, y, placeholder=""){
+  function createTextBox(x, y, text){
     const box = document.createElement('div');
     box.className = 'text-box text-print';
     box.contentEditable = 'true';
-    box.style.left = `${x + canvas.getBoundingClientRect().left}px`;
-    box.style.top = `${y + canvas.getBoundingClientRect().top}px`;
-    box.style.transform = `translate(0,0)`;
-    box.style.position = 'absolute';
-    box.innerText = placeholder;
-    document.body.appendChild(box);
-
-    // al hacer click fuera, si está vacío, eliminar
-    function blurHandler(){
-      if (!box.innerText.trim()) {
-        box.remove();
-      } else {
-        // reubicar dentro del textLayer relativo al canvas
-        const cRect = canvas.getBoundingClientRect();
-        const bRect = box.getBoundingClientRect();
-        const relLeft = bRect.left - cRect.left;
-        const relTop = bRect.top - cRect.top;
-        box.style.left = relLeft + 'px';
-        box.style.top = relTop + 'px';
-        textLayer.appendChild(box);
-      }
-      box.removeEventListener('blur', blurHandler);
-    }
-    box.addEventListener('blur', blurHandler);
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
+    box.innerText = text || '';
+    textLayer.appendChild(box);
     box.focus();
     // seleccionar todo
     const sel = window.getSelection();
@@ -263,7 +279,6 @@
     sel.addRange(range);
   }
 
-  // Inicializa
   function init(){
     setCanvasSize();
     sizeVal.textContent = size.value;

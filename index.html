@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Bloc de Dibujo / AutoTexto Demo</title>
+  <title>Bloc de Dibujo + AutoTexto (Azure OCR)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -18,30 +18,17 @@
   </header>
 
   <section class="toolbar">
-    <label class="tool">
-      Color
-      <input type="color" id="color" value="#111111" />
-    </label>
-    <label class="tool">
-      Grosor
-      <input type="range" id="size" min="1" max="32" value="4" />
-      <span id="sizeVal">4</span> px
-    </label>
-    <label class="tool">
-      Opacidad
-      <input type="range" id="alpha" min="0.1" max="1" step="0.05" value="1" />
-      <span id="alphaVal">1.00</span>
-    </label>
-    <label class="tool">
-      Modo
+    <label class="tool">Color <input type="color" id="color" value="#111111" /></label>
+    <label class="tool">Grosor <input type="range" id="size" min="1" max="32" value="4" /> <span id="sizeVal">4</span> px</label>
+    <label class="tool">Opacidad <input type="range" id="alpha" min="0.1" max="1" step="0.05" value="1" /> <span id="alphaVal">1.00</span></label>
+    <label class="tool">Modo
       <select id="mode">
         <option value="draw" selected>Dibujar</option>
         <option value="erase">Borrar</option>
         <option value="highlighter">Resaltador</option>
       </select>
     </label>
-    <label class="tool">
-      Fondo
+    <label class="tool">Fondo
       <select id="background">
         <option value="blank" selected>Blanco</option>
         <option value="grid">Cuadriculado</option>
@@ -49,11 +36,11 @@
         <option value="dotted">Punteado</option>
       </select>
     </label>
-    <label class="tool">
-      AutoTexto
+    <label class="tool">AutoTexto
       <select id="autotext">
         <option value="off" selected>Apagado</option>
         <option value="demo">Demo (manual)</option>
+        <option value="azure">Azure OCR</option>
       </select>
     </label>
     <button id="exportPdfBtn" class="ghost">Exportar PDF</button>
@@ -71,7 +58,7 @@
   </main>
 
   <footer class="foot">
-    Sugerencia: Activa <b>AutoTexto → Demo</b>. Escribe una palabra, levanta el stylus y verás el texto limpio editable.
+    Tip: Activa <b>AutoTexto → Azure OCR</b>, escribe y suelta para ver el texto reconocido.
   </footer>
 
   <script src="app.js"></script>
